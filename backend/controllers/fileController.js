@@ -1,50 +1,35 @@
-import crypto from "crypto";
-import fs from "fs";
-import path from "path";
+import {
+  Transaction,
+  SystemProgram,
+  sendAndConfirmTransaction,
+  PublicKey,
+} from "@solana/web3.js";
+import { getConnection, initWallet, fundWallet } from "../config/solana.js";
+import { MemoProgram } from "@solana/spl-memo";
 
-const fileHashes = {}; // temporary in-memory store (use DB later)
-
-export const uploadFile = (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-    const filePath = path.join("uploads", req.file.filename);
-    const fileBuffer = fs.readFileSync(filePath);
-
-    // Generate SHA256 hash
-    const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
-
-    // Store hash
-    fileHashes[hash] = {
-      originalName: req.file.originalname,
-      uploadedAt: new Date(),
-    };
-
-    res.status(200).json({
-      message: "File uploaded successfully",
-      hash,
-      filename: req.file.originalname,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-};
-
-export const verifyFile = (req, res) => {
+export const storeHashOnSolana = async (req, res) => {
   try {
     const { hash } = req.body;
-    if (!hash) return res.status(400).json({ error: "No hash provided" });
+    if (!hash) return res.status(400).json({ error: "Hash is required" });
 
-    const record = fileHashes[hash];
-    if (!record) return res.status(404).json({ message: "File not found" });
+    const connection = getConnection();
+    const wallet = await initWallet();
+    await fundWallet(wallet);
 
-    res.status(200).json({
-      message: "File verified",
-      record,
+    // 🧠 Add hash to the blockchain using the Memo program (clean metadata)
+    const instruction = MemoProgram.writeUtf8(wallet.publicKey, hash);
+
+    const tx = new Transaction().add(instruction);
+    const signature = await sendAndConfirmTransaction(connection, tx, [wallet]);
+
+    res.json({
+      message: "✅ File hash stored on Solana",
+      hash,
+      signature,
+      explorer: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error("❌ Solana Error:", error);
+    res.status(500).json({ error: "Failed to store on Solana" });
   }
 };
