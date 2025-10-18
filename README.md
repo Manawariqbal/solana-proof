@@ -14,3 +14,18 @@ SolanaProof is a decentralized web app that lets users upload files and verify t
 git clone https://github.com/<your-username>/solana-proof.git
 cd frontend && npm install && npm run dev
 cd backend && npm install && node server.js
+
+
+## 🌀 Git Workflow
+
+1. Always pull latest:
+   ```bash
+   git checkout main
+   git pull origin main
+2. Create daily branch:
+   git checkout -b dayN-feature
+3. Commit and push:
+   git add .
+   git commit -m "dayN: your change"
+   git push origin dayN-feature
+4 .Create Pull Request → Merge → Delete branch
