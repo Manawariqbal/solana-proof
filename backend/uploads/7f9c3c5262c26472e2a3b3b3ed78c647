@@ -1,0 +1,71 @@
+package com.dnapass.training.controller;
+
+import com.dnapass.training.entity.NutrientPlan;
+import com.dnapass.training.service.NutrientPlanService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/nutrient-plans")
+public class NutrientPlanController {
+
+    @Autowired
+    private NutrientPlanService service;
+
+    // ✅ Create
+    @PostMapping
+    public ResponseEntity<NutrientPlan> createNutrientPlan(@RequestBody NutrientPlan plan) {
+        NutrientPlan created = service.createNutrientPlan(plan);
+        return ResponseEntity.status(201).body(created);
+    }
+
+    // ✅ Update
+    @PutMapping("/{id}")
+    public ResponseEntity<NutrientPlan> updateNutrientPlan(@PathVariable Long id,
+                                                           @RequestBody NutrientPlan plan) {
+        NutrientPlan updated = service.updateNutrientPlan(id, plan);
+        if (updated == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(updated);
+    }
+
+    // ✅ Get by nutrient type
+    @GetMapping("/type/{type}")
+    public ResponseEntity<List<NutrientPlan>> getPlansByType(@PathVariable String type) {
+        return ResponseEntity.ok(service.getNutrientPlansByType(type));
+    }
+
+    // ✅ Get by calorie range
+    @GetMapping("/calories")
+    public ResponseEntity<?> getPlansByCalories(@RequestParam double minCalories,
+                                                @RequestParam double maxCalories) {
+        if (minCalories < 0 || maxCalories < minCalories) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(service.getNutrientPlansByCalorieRange(minCalories, maxCalories));
+    }
+
+    // ✅ Get macros
+    @GetMapping("/{id}/macros")
+    public ResponseEntity<Map<String, Double>> getMacros(@PathVariable Long id) {
+        Map<String, Double> macros = service.getMacronutrientDistribution(id);
+        if (macros == null) return ResponseEntity.notFound().build();
+        return ResponseEntity.ok(macros);
+    }
+
+    // ✅ Get active plans in date range
+    @GetMapping("/active")
+    public ResponseEntity<?> getActivePlans(@RequestParam String startDate,
+                                            @RequestParam String endDate) {
+        LocalDate start = LocalDate.parse(startDate);
+        LocalDate end = LocalDate.parse(endDate);
+        if (end.isBefore(start)) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(service.getActiveDietPlansInDateRange(start, end));
+    }
+}

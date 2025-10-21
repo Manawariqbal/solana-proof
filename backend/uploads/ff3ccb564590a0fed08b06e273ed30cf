@@ -1,0 +1,230 @@
+# 🥗 Nutrient Plan API
+
+A **Spring Boot RESTful API** for managing personalized nutrient and diet plans.  
+It allows users to **create, update, and retrieve nutrient plans**, calculate **macronutrient distribution**,  
+and find **active plans within specific date ranges**.
+
+---
+
+## 🚀 Features
+
+- ✅ Create and update nutrient plans  
+- 🔍 Search by nutrient type or calorie range  
+- 📅 Get active plans within a date range  
+- 🍎 Calculate macronutrient distribution (Protein, Carbs, Fat)  
+- 🧾 Input validation for calories and dates  
+
+---
+
+## 🏗️ Tech Stack
+
+| Layer | Technology |
+|-------|-------------|
+| **Backend** | Spring Boot (Java 17+) |
+| **Database** | H2 / MySQL (configurable in `application.properties`) |
+| **ORM** | Spring Data JPA with Hibernate |
+| **Build Tool** | Maven |
+| **Testing** | JUnit + Postman |
+
+---
+
+## ⚙️ Setup Instructions
+
+### 1️⃣ Clone the Repository
+```bash
+git clone https://github.com/<your-username>/nutrient-plan-api.git
+cd nutrient-plan-api
+```
+
+### 2️⃣ Build and Run the Project
+```bash
+mvn clean install
+mvn spring-boot:run
+```
+
+The application will start at:  
+👉 **http://localhost:8080**
+
+---
+
+## 🧩 API Endpoints
+
+### ➕ Create a Nutrient Plan
+**POST** `/api/nutrient-plans`
+
+**Request Body:**
+```json
+{
+  "name": "Keto Plan",
+  "description": "Low-carb, high-fat diet plan",
+  "dailyCalories": 1800,
+  "proteinGrams": 120,
+  "carbGrams": 50,
+  "fatGrams": 90,
+  "startDate": "2025-10-01",
+  "endDate": "2025-11-01",
+  "nutrientType": "Keto",
+  "isActive": true
+}
+```
+
+**Response:** `201 Created`
+
+---
+
+### ✏️ Update a Nutrient Plan
+**PUT** `/api/nutrient-plans/{id}`  
+Updates an existing plan’s fields.
+
+---
+
+### 🔍 Get Plans by Nutrient Type
+**GET** `/api/nutrient-plans/type/{type}`
+
+**Example:**
+```
+GET /api/nutrient-plans/type/Keto
+```
+
+---
+
+### 🔍 Get Plans by Calorie Range
+**GET** `/api/nutrient-plans/calories?minCalories=1500&maxCalories=2500`
+
+---
+
+### 📆 Get Active Plans in Date Range
+**GET** `/api/nutrient-plans/active?startDate=2025-10-01&endDate=2025-12-31`
+
+---
+
+### 🍱 Get Macronutrient Distribution
+**GET** `/api/nutrient-plans/{id}/macros`
+
+**Response:**
+```json
+{
+  "Protein": 40.0,
+  "Carbs": 30.0,
+  "Fat": 30.0
+}
+```
+
+---
+
+## 🧠 Validations
+
+| Field | Validation |
+|--------|-------------|
+| `dailyCalories` | Must be **greater than 0** |
+| `endDate` | Must be **after `startDate`** |
+| `name`, `description`, `nutrientType` | Must not be null |
+
+---
+
+## 🧪 Testing the API (Postman)
+
+1. Start the Spring Boot app:
+   ```bash
+   mvn spring-boot:run
+   ```
+2. Open **Postman** and create requests:
+   - **POST** → Create a nutrient plan  
+   - **GET** → Fetch by type or calorie range  
+   - **PUT** → Update an existing plan  
+   - **GET** `/active` → Retrieve active plans in date range  
+   - **GET** `/macros` → Check macro ratio for a plan  
+
+💡 Tip:  
+You can also import a Postman collection with all routes pre-configured.
+
+---
+
+## 🧰 Project Structure
+
+```
+nutrient-plan-api/
+ ├── src/
+ │   ├── main/java/com/dnapass/training/
+ │   │   ├── controller/          # REST Controllers
+ │   │   ├── entity/              # Entity Classes
+ │   │   ├── repository/          # JPA Repositories
+ │   │   └── service/             # Business Logic
+ │   └── resources/
+ │       ├── application.properties
+ │       └── data.sql (optional)
+ └── test/
+     └── java/... (JUnit tests)
+```
+
+---
+
+## 🧩 Example Entity (Using Lombok)
+
+```java
+package com.dnapass.training.entity;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import javax.persistence.*;
+import java.time.LocalDate;
+
+@Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class NutrientPlan {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+    private String description;
+    private Integer dailyCalories;
+    private Integer proteinGrams;
+    private Integer carbGrams;
+    private Integer fatGrams;
+    private LocalDate startDate;
+    private LocalDate endDate;
+    private String nutrientType;
+    private Boolean isActive;
+}
+```
+
+---
+
+## 📄 Example `application.properties`
+
+```properties
+# Server
+server.port=8080
+
+# Database (H2 for simplicity)
+spring.datasource.url=jdbc:h2:mem:nutrientdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+
+spring.jpa.hibernate.ddl-auto=update
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
+```
+
+---
+
+## 🧑‍💻 Author
+
+**Md Manawar Iqbal**  
+Full Stack Developer | Cloud & DevOps Enthusiast  
+
+📧 [mmiqbalmanawar@gmail.com](mailto:mmiqbalmanawar@gmail.com)  
+🔗 [LinkedIn](https://www.linkedin.com/in/md-manawar-iqbal/)  
+💻 [GitHub](https://github.com/Manawariqbal)
+
+---
+
+## 🪄 License
+
+This project is licensed under the **MIT License**.
