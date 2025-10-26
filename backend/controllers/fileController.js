@@ -1,135 +1,184 @@
-import fs from "fs";
+// backend/controllers/fileController.js
+import bs58 from "bs58";
+
 import crypto from "crypto";
-import { Transaction, SystemProgram, PublicKey } from "@solana/web3.js";
-import { getConnection, initWallet } from "../config/solana.js";
+import fs from "fs";
+import path from "path";
+import { getConnection, initWallet, fundWallet, getBalance } from "../config/solana.js";
+import { Transaction, PublicKey } from "@solana/web3.js";
+import { uploadToIPFS } from "../config/ipfs.js";
 
-const connection = getConnection();
+const fileHashes = {}; // optional in-memory store
 
-/**
- * Upload File (generate hash)
- */
+// helper to build memo payload
+const buildMemo = (hash, cid) => JSON.stringify({ hash, cid });
+
+// 🧾 Upload file and return hash + saved filename
 export const uploadFile = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const fileBuffer = fs.readFileSync(req.file.path);
+    const filePath = path.join("uploads", req.file.filename);
+    const fileBuffer = fs.readFileSync(filePath);
     const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
-    console.log("✅ File uploaded with hash:", hash);
-    res.json({
-      message: "File uploaded successfully",
-      filename: req.file.originalname,
+    fileHashes[req.file.filename] = {
+      originalName: req.file.originalname,
       hash,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    return res.status(200).json({
+      message: "✅ File uploaded successfully",
+      hash,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
     });
-  } catch (err) {
-    console.error("❌ Error in uploadFile:", err);
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    console.error("❌ Upload error:", error);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
-/**
- * Verify File (local hash match)
- */
+// ✅ Verify file hash locally (optional)
 export const verifyFile = async (req, res) => {
   try {
     const { hash, filename } = req.body;
+    if (!hash || !filename)
+      return res.status(400).json({ message: "Missing hash or filename" });
 
-    if (!hash || !filename) {
-      return res.status(400).json({ message: "❌ Missing hash or filename" });
-    }
-
-    const filePath = `uploads/${filename}`;
-    console.log("🧩 Verifying file:", filePath);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        message: "❌ File not found",
-        hint: "Check your uploads/ folder and filename being sent",
-      });
-    }
+    const filePath = path.join("uploads", filename);
+    if (!fs.existsSync(filePath))
+      return res.status(404).json({ message: "❌ File not found" });
 
     const fileBuffer = fs.readFileSync(filePath);
     const computedHash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
     const isMatch = computedHash === hash;
-
-    console.log("🔍 Computed Hash:", computedHash);
-    console.log("🔍 Provided Hash:", hash);
-
-    return res.json({
-      message: isMatch
-        ? "✅ File verified successfully"
-        : "❌ File hash mismatch",
-      isMatch,
-      computedHash,
-      expectedHash: hash,
-      filename,
-    });
-  } catch (error) {
-    console.error("❌ Error verifying file:", error);
-    return res.status(500).json({ error: "Failed to verify file" });
+    res.json({ isMatch, computedHash });
+  } catch (err) {
+    console.error("❌ Error verifying file:", err);
+    res.status(500).json({ error: err.message });
   }
 };
-/**
- * Store File Hash on Solana
- */
+
+// 🌐 Store hash + IPFS CID on Solana (upload file to IPFS first)
 export const storeHashOnSolana = async (req, res) => {
   try {
-    const { hash } = req.body;
-    if (!hash) return res.status(400).json({ message: "File hash required" });
+    const { filename, hash } = req.body;
+    if (!hash) return res.status(400).json({ error: "Hash is required" });
 
+    let filePath = null;
+    if (filename) {
+      filePath = path.join("uploads", filename);
+      if (!fs.existsSync(filePath)) filePath = null;
+    }
+
+    let cid = null;
+    if (filePath) {
+      cid = await uploadToIPFS(filePath, filename || "file");
+    }
+
+    const connection = getConnection();
     const wallet = await initWallet();
+    await fundWallet(wallet);
 
-    const instruction = SystemProgram.transfer({
-      fromPubkey: wallet.publicKey,
-      toPubkey: wallet.publicKey,
-      lamports: 1, // minimum transfer
-    });
+    const memoString = buildMemo(hash, cid || null);
 
-    const transaction = new Transaction().add(instruction);
-
-    // Add memo instruction manually
-    transaction.add({
+    const memoInstruction = {
       keys: [],
       programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
-      data: Buffer.from(hash),
-    });
+      data: Buffer.from(memoString),
+    };
 
-    const signature = await connection.sendTransaction(transaction, [wallet]);
+    const tx = new Transaction().add(memoInstruction);
+    const signature = await connection.sendTransaction(tx, [wallet]);
     await connection.confirmTransaction(signature, "confirmed");
 
-    const explorerUrl = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+    const explorer = `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 
-    res.json({
-      message: "✅ File hash stored on Solana",
+    return res.json({
+      message: "✅ File hash and CID stored on Solana",
       hash,
-      solana_signature: signature,
-      explorer_url: explorerUrl,
+      cid,
+      signature,
+      explorer,
     });
   } catch (err) {
-    console.error("❌ Error storing hash on Solana:", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ storeHashOnSolana error:", err);
+    return res.status(500).json({ error: err.message });
   }
 };
 
-/**
- * Verify File Hash on Solana
- */
 export const verifyFileOnChain = async (req, res) => {
   try {
-    const { hash } = req.body;
-    if (!hash) return res.status(400).json({ message: "File hash required" });
+    const { hash, cid } = req.body;
+    if (!hash && !cid) {
+      return res.status(400).json({ error: "hash or cid is required" });
+    }
 
-    // In production, you'd fetch recent transactions and search for hash in memo
-    res.json({
-      message: "✅ (Mock) Verification successful",
-      verified: true,
-      hash,
-    });
+    const connection = getConnection();
+    const wallet = await initWallet();
+
+    console.log("🔍 Checking recent transactions for wallet:", wallet.publicKey.toBase58());
+    const sigInfos = await connection.getSignaturesForAddress(wallet.publicKey, { limit: 50 });
+
+    for (const s of sigInfos) {
+      const tx = await connection.getTransaction(s.signature, { commitment: "confirmed" });
+      if (!tx) continue;
+
+      const instructions = tx.transaction?.message?.instructions || [];
+      for (const ix of instructions) {
+        try {
+          const programId = ix.programId?.toString();
+          if (programId === "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr") {
+            // 🧩 Decode base58 data safely
+            let dataStr;
+            try {
+              dataStr = Buffer.from(bs58.decode(ix.data)).toString("utf8");
+            } catch {
+              dataStr = ix.data?.toString() || "";
+            }
+
+            // 🧠 Attempt to parse JSON memo payload
+            let parsed;
+            try {
+              parsed = JSON.parse(dataStr);
+            } catch {
+              parsed = dataStr;
+            }
+
+            // 🔍 Check match
+            if (typeof parsed === "object" && parsed !== null) {
+              if ((hash && parsed.hash === hash) || (cid && parsed.cid === cid)) {
+                return res.json({
+                  verified: true,
+                  match: parsed,
+                  signature: s.signature,
+                  explorer: `https://explorer.solana.com/tx/${s.signature}?cluster=devnet`,
+                });
+              }
+            } else if (
+              (hash && parsed.includes(hash)) ||
+              (cid && parsed.includes(cid))
+            ) {
+              return res.json({
+                verified: true,
+                match: parsed,
+                signature: s.signature,
+                explorer: `https://explorer.solana.com/tx/${s.signature}?cluster=devnet`,
+              });
+            }
+          }
+        } catch (innerErr) {
+          continue;
+        }
+      }
+    }
+
+    return res.json({ verified: false, message: "Not found on-chain in recent transactions" });
   } catch (err) {
-    console.error("❌ Error verifying on-chain:", err);
-    res.status(500).json({ error: err.message });
+    console.error("❌ verifyFileOnChain error:", err);
+    return res.status(500).json({ error: err.message });
   }
 };
