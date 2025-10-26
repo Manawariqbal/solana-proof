@@ -1,208 +1,94 @@
 import React, { useState } from "react";
+import axios from "axios";
 
-function App() {
+export default function App() {
   const [file, setFile] = useState(null);
   const [hash, setHash] = useState("");
-  const [uploadResponse, setUploadResponse] = useState(null);
-  const [solanaResponse, setSolanaResponse] = useState(null);
-  const [verifyResponse, setVerifyResponse] = useState(null);
-  const [walletInfo, setWalletInfo] = useState(null);
+  const [cid, setCid] = useState("");
+  const [status, setStatus] = useState("");
+  const backend = "http://localhost:5000";
 
-  const BACKEND_URL = "http://localhost:5000"; // 👈 your backend base URL
-
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
-    if (selectedFile) {
-      setFile(selectedFile);
-      console.log("File selected:", selectedFile.name);
-    }
+  const onFileChange = (e) => {
+    setFile(e.target.files[0]);
+    setStatus("");
   };
 
-  const handleUpload = async () => {
-    if (!file) return alert("Please select a file first!");
-
-    const formData = new FormData();
-    formData.append("file", file);
+  const uploadFile = async () => {
+    if (!file) return alert("Choose a file first");
+    setStatus("Uploading and hashing file...");
+    const fd = new FormData();
+    fd.append("file", file);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/upload`, {
-        method: "POST",
-        body: formData,
+      const res = await axios.post(`${backend}/upload`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
-
-      setHash(data.hash);
-      setUploadResponse(data);
-      alert("✅ File uploaded successfully!");
+      setHash(res.data.hash);
+      setStatus(`File uploaded. Hash: ${res.data.hash}`);
     } catch (err) {
       console.error(err);
-      alert("❌ Upload failed: " + err.message);
+      setStatus("Upload failed: " + (err?.response?.data?.error || err.message));
     }
   };
 
-  const handleVerifyLocal = async () => {
-    if (!hash) return alert("No hash found. Upload a file first!");
-
+  const storeOnChain = async () => {
+    if (!hash) return alert("Upload file first");
+    setStatus("Uploading file to IPFS and storing on Solana...");
     try {
-      const res = await fetch(`${BACKEND_URL}/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hash }),
-      });
-
-      const data = await res.json();
-      setVerifyResponse(data);
-      alert(data.message || "Verification complete!");
+      // send filename to backend to trigger IPFS upload
+      // note: server uses the saved multer filename (req.file.filename). If your frontend doesn't know saved filename, we rely on backend to find file by hash or pass filename in body. Here we only pass hash; if you want server to upload IPFS, also pass filename from upload response.
+      const body = { hash }; // optional: add filename: savedName if returned earlier
+      const res = await axios.post(`${backend}/onchain`, body);
+      setCid(res.data.cid || "");
+      setStatus(`Stored on Solana. Signature: ${res.data.signature}`);
     } catch (err) {
       console.error(err);
-      alert("❌ Verification failed");
+      setStatus("Store on-chain failed: " + (err?.response?.data?.error || err.message));
     }
   };
 
-  const handleStoreOnSolana = async () => {
-    if (!hash) return alert("Upload a file first to get its hash!");
-
+  const verifyOnChain = async () => {
+    if (!hash && !cid) return alert("Upload and store first (need hash or cid)");
+    setStatus("Searching Solana for proof...");
     try {
-      const res = await fetch(`${BACKEND_URL}/onchain`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hash }),
-      });
-
-      const data = await res.json();
-      setSolanaResponse(data);
-      alert(data.message || "Stored on Solana!");
+      const res = await axios.post(`${backend}/verify-onchain`, { hash, cid });
+      if (res.data.verified) {
+        setStatus(`Verified on-chain! Signature: ${res.data.signature}`);
+      } else {
+        setStatus("Not found on-chain in recent transactions");
+      }
     } catch (err) {
       console.error(err);
-      alert("❌ Failed to store hash on Solana");
-    }
-  };
-
-  const handleVerifyOnChain = async () => {
-    if (!hash) return alert("Upload a file first!");
-
-    try {
-      const res = await fetch(`${BACKEND_URL}/verify-onchain`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hash }),
-      });
-
-      const data = await res.json();
-      setVerifyResponse(data);
-      alert(data.message);
-    } catch (err) {
-      console.error(err);
-      alert("❌ On-chain verification failed");
-    }
-  };
-
-  const handleWalletBalance = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/balance`);
-      const data = await res.json();
-      setWalletInfo(data);
-    } catch (err) {
-      console.error(err);
-      alert("❌ Failed to fetch wallet balance");
+      setStatus("Verification request failed: " + (err?.response?.data?.error || err.message));
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col items-center justify-center px-6 py-12">
-      <h1 className="text-3xl font-bold mb-6">🔗 Solana Proof System</h1>
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+      <div className="bg-white p-8 rounded-lg shadow w-full max-w-lg">
+        <h1 className="text-2xl font-bold mb-4">SolanaProof — IPFS + On-Chain Verify</h1>
 
-      {/* File Upload */}
-      <div className="bg-gray-800 p-6 rounded-xl shadow-lg w-full max-w-md">
-        <input
-          type="file"
-          onChange={handleFileChange}
-          className="block w-full text-sm mb-3 text-gray-300"
-        />
-        <button
-          onClick={handleUpload}
-          className="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded-lg mb-4 transition"
-        >
-          Upload File
-        </button>
+        <input type="file" onChange={onFileChange} className="mb-4" />
 
-        {uploadResponse && (
-          <div className="bg-gray-700 p-3 rounded-lg mb-4">
-            <p><b>Filename:</b> {uploadResponse.filename}</p>
-            <p><b>Hash:</b> {uploadResponse.hash}</p>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-3">
-          <button
-            onClick={handleVerifyLocal}
-            className="bg-yellow-500 hover:bg-yellow-600 py-2 rounded-lg transition"
-          >
-            Verify Locally
-          </button>
-          <button
-            onClick={handleStoreOnSolana}
-            className="bg-green-600 hover:bg-green-700 py-2 rounded-lg transition"
-          >
-            Store Hash on Solana
-          </button>
-          <button
-            onClick={handleVerifyOnChain}
-            className="bg-purple-600 hover:bg-purple-700 py-2 rounded-lg transition"
-          >
-            Verify On-Chain
-          </button>
-          <button
-            onClick={handleWalletBalance}
-            className="bg-gray-600 hover:bg-gray-700 py-2 rounded-lg transition"
-          >
-            Check Wallet Balance
-          </button>
+        <div className="flex gap-3 mb-4">
+          <button onClick={uploadFile} className="px-4 py-2 bg-blue-600 text-white rounded">Upload & Hash</button>
+          <button onClick={storeOnChain} className="px-4 py-2 bg-green-600 text-white rounded">Store on Solana (IPFS)</button>
+          <button onClick={verifyOnChain} className="px-4 py-2 bg-purple-600 text-white rounded">Verify on Solana</button>
         </div>
 
-        {walletInfo && (
-          <div className="bg-gray-700 p-3 rounded-lg mt-4">
-            <p><b>Public Key:</b> {walletInfo.publicKey}</p>
-            <p><b>Balance:</b> {walletInfo.balance}</p>
-          </div>
-        )}
-
-        {solanaResponse && (
-          <div className="bg-gray-700 p-3 rounded-lg mt-4">
-            <p>{solanaResponse.message}</p>
-            {solanaResponse.explorer && (
-              <a
-                href={solanaResponse.explorer}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 underline"
-              >
-                View Transaction on Solana Explorer
+        <div className="mt-4">
+          <p className="text-sm text-gray-700">{status}</p>
+          {hash && <p className="mt-2"><strong>Hash:</strong> <span className="break-all">{hash}</span></p>}
+          {cid && (
+            <p className="mt-2">
+              <strong>IPFS CID:</strong>{" "}
+              <a className="text-blue-600" href={`https://ipfs.io/ipfs/${cid}`} target="_blank" rel="noreferrer">
+                {cid}
               </a>
-            )}
-          </div>
-        )}
-
-        {verifyResponse && (
-          <div className="bg-gray-700 p-3 rounded-lg mt-4">
-            <p>{verifyResponse.message}</p>
-            {verifyResponse.explorer && (
-              <a
-                href={verifyResponse.explorer}
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 underline"
-              >
-                View Verification
-              </a>
-            )}
-          </div>
-        )}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
 }
-
-export default App;
